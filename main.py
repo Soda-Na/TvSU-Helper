@@ -1,13 +1,16 @@
 import asyncio
+import os
 
-from aiogram                        import Dispatcher
+from aiogram import Dispatcher, Bot
+from aiogram.client.default import DefaultBotProperties
 
-dispatcher = Dispatcher(name="main")
+dispatcher = Dispatcher()
 
+bot = Bot(token=os.getenv("BOT_TOKEN"), default=DefaultBotProperties(parse_mode="HTML"))
 
 async def main():
-    await dispatcher.startup.register(lambda router: print(f"Router {router} started"))
-    await dispatcher.start_polling(main_bot)
+    dispatcher.startup.register(lambda: print("Bot started"))
+    await dispatcher.start_polling(bot)
 
 if __name__ == '__main__':
     asyncio.run(main())
