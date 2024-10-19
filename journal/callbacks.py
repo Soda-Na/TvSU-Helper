@@ -27,7 +27,7 @@ class CourseAction(Enum):
     INC = "i"
     DELETE = "d"
     DELETE_CONFIRM = "dc"
-    DESC = "desc"
+    DESC = "dsc"
     MORE_DETAILS = "m"
     MORE_DETAILS_CONFIRM = "mc"
     

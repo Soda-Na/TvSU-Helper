@@ -5,7 +5,7 @@ from datetime import datetime
 from .types import User, Points
 
 class BaseTable:
-    def __init__(self, db_path = "database.db"):
+    def __init__(self, db_path="database.db"):
         self.db_path = db_path
 
     async def execute(self, query: str, *args):
@@ -38,12 +38,12 @@ class BaseTable:
             db.row_factory = aiosqlite.Row
             async with db.execute(query, args) as cursor:
                 return await cursor.fetchone()
-            
-    async def addcollumn(self, table: str, collumn: str, type: str):
-        await self.execute_commit(f"ALTER TABLE {table} ADD COLUMN {collumn} {type}")
+
+    async def add_column(self, table: str, column: str, col_type: str):
+        await self.execute_commit(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
 
 class UsersTable(BaseTable):
-    def __init__(self, db_path = "database.db"):
+    def __init__(self, db_path="database.db"):
         super().__init__(db_path)
         asyncio.run(self.create_table())
 
@@ -75,20 +75,15 @@ class UsersTable(BaseTable):
             """,
             user_id
         )
-        if row is None:
-            return None
-        print(row)
-        return User(**dict(row))
+        return User(**dict(row)) if row else None
 
     async def get_users(self):
-        row = await self.fetchall(
+        rows = await self.fetchall(
             """
             SELECT * FROM users
             """
         )
-        if row is None:
-            return None
-        return [User(**dict(i)) for i in row]
+        return [User(**dict(row)) for row in rows] if rows else None
 
     async def update_group(self, user_id: int, group: str):
         await self.execute_commit(
@@ -102,7 +97,7 @@ class UsersTable(BaseTable):
         )
 
 class PointsTable(BaseTable):
-    def __init__(self, db_path = "database.db"):
+    def __init__(self, db_path="database.db"):
         super().__init__(db_path)
         asyncio.run(self.create_table())
 
@@ -128,19 +123,15 @@ class PointsTable(BaseTable):
             user_id,
             course
         )
-        if row is None:
-            return None
-        return Points(**dict(row))
+        return Points(**dict(row)) if row else None
 
     async def get_all_points(self):
-        row = await self.fetchall(
+        rows = await self.fetchall(
             """
             SELECT * FROM points
             """
         )
-        if row is None:
-            return None
-        return [Points(**dict(i)) for i in row]
+        return [Points(**dict(row)) for row in rows] if rows else None
 
     async def delete_points(self, user_id: int, course: str, timestamp: datetime):
         await self.execute_commit(
@@ -164,19 +155,17 @@ class PointsTable(BaseTable):
         )
 
     async def get_all_by_user(self, user_id: int):
-        row = await self.fetchall(
+        rows = await self.fetchall(
             """
             SELECT * FROM points
             WHERE id = ?
             """,
             user_id
         )
-        if row is None:
-            return None
-        return [Points(**dict(i)) for i in row]
+        return [Points(**dict(row)) for row in rows] if rows else None
     
     async def get_all_by_course(self, user_id: int, course: str):
-        row = await self.fetchall(
+        rows = await self.fetchall(
             """
             SELECT * FROM points
             WHERE id = ? AND course = ?
@@ -184,9 +173,7 @@ class PointsTable(BaseTable):
             user_id,
             course
         )
-        if row is None:
-            return None
-        return [Points(**dict(i)) for i in row]
+        return [Points(**dict(row)) for row in rows] if rows else None
     
     async def add_points(self, points: Points):
         await self.execute_commit(
@@ -227,22 +214,19 @@ class PointsTable(BaseTable):
         )
 
     async def get_sorted_points(self, user_id: int) -> dict[str, list[int]]:
-        row = await self.fetchall(
+        rows = await self.fetchall(
             """
             SELECT * FROM points
             WHERE id = ?
             """,
             user_id
         )
-        if row is None:
+        if not rows:
             return None
-        points = [Points(**dict(i)) for i in row]
+        points = [Points(**dict(row)) for row in rows]
         sorted_by_course = {}
         for point in points:
-            if point.course not in sorted_by_course:
-                sorted_by_course[point.course] = []
-            sorted_by_course[point.course].append(point.count)
-
+            sorted_by_course.setdefault(point.course, []).append(point.count)
         return sorted_by_course
     
     async def get_point(self, user_id: int, course: str, timestamp: int):
@@ -255,6 +239,4 @@ class PointsTable(BaseTable):
             course,
             timestamp
         )
-        if row is None:
-            return None
-        return Points(**dict(row))
+        return Points(**dict(row)) if row else None
