@@ -277,7 +277,8 @@ async def delete_points_course(callback_query: types.CallbackQuery, callback_dat
                     course=callback_data.course,
                     timestamp=point.timestamp,
                     count=point.count,
-                    back_to=PointsCallback.__prefix__ + ' ' + PointsAction.DELETE.value
+                    back_to=PointsCallback.__prefix__ + ' ' + PointsAction.DELETE.value,
+                    user_id=callback_query.from_user.id
                 )
             )
         buttons.button(
@@ -285,7 +286,8 @@ async def delete_points_course(callback_query: types.CallbackQuery, callback_dat
             callback_data=CourseCallback(
                 action=CourseAction.DELETE_CONFIRM,
                 course=callback_data.course + "allcourse",
-                back_to=PointsCallback.__prefix__ + ' ' + PointsAction.DELETE.value
+                back_to=PointsCallback.__prefix__ + ' ' + PointsAction.DELETE.value,
+                user_id=callback_query.from_user.id
             )
         )
     else:
@@ -374,12 +376,21 @@ async def add_points_description(message: types.Message, state: FSMContext):
 
 @dispatcher.callback_query(CourseCallback.filter(F.action == CourseAction.DELETE_CONFIRM))
 async def delete_points_count(callback_query: types.CallbackQuery, callback_data: CourseCallback):
+    back_to = callback_data.back_to.split(" ")
+    prefix = back_to[0]
+    action = back_to[1]
+
+    for callbacks in [MenuCallback, PointsCallback, CourseCallback]:
+        if prefix == callbacks.__prefix__:
+            back_to = callbacks(action=action, user_id=callback_query.from_user.id, course=callback_data.course, timestamp=callback_data.timestamp).pack()
+            break
+
     if callback_data.course.endswith("allcourse"):
         decoded_course = decode_eng_to_rus(callback_data.course[:-len("allcourse")])
         await points_table.delete_all_points_by_course(callback_query.from_user.id, decoded_course)
         await callback_query.message.edit_text(
             f"✅ Все баллы по предмету {decoded_course} успешно удалены!",
-            reply_markup=back_button_markup(callback_data.back_to.replace("@", "|"))
+            reply_markup=back_button_markup(back_to)
         )
         return
     decoded_course = decode_eng_to_rus(callback_data.course)
@@ -387,7 +398,7 @@ async def delete_points_count(callback_query: types.CallbackQuery, callback_data
     await points_table.delete_points(callback_query.from_user.id, decoded_course, callback_data.timestamp)
     await callback_query.message.edit_text(
         "✅ Балл успешно удален!",
-        reply_markup=back_button_markup(callback_data.back_to.replace("@", "|"))
+        reply_markup=back_button_markup(back_to)
     )
 
 @dispatcher.callback_query(CourseCallback.filter(F.action == CourseAction.ADD_COURSE))
