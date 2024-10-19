@@ -2,3 +2,4 @@ aiogram
 aiosqlite
 httpx
 pydantic
+pytz
