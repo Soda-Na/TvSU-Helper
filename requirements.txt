@@ -3,3 +3,4 @@ aiosqlite
 httpx
 pydantic
 pytz
+python-dotenv
