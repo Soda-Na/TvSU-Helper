@@ -17,7 +17,7 @@ class PointsAction(Enum):
 
 class PointsCallback(CallbackData, prefix="p"):
     action: PointsAction
-    user_id: int
+    user_id: int | None = None
 
 class CourseAction(Enum):
     ADD_POINTS = "ap"

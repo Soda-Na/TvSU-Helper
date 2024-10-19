@@ -145,7 +145,7 @@ async def handle_points_action(callback_query: types.CallbackQuery, action: Cour
             encoded_course = encode_rus_to_eng(course)
             buttons.button(
                 text=course,
-                callback_data=CourseCallback(action=action, course=encoded_course)
+                callback_data=CourseCallback(action=action, course=encoded_course, user_id=callback_query.from_user.id)
             )
     else:
         text = text_if_empty
@@ -153,7 +153,7 @@ async def handle_points_action(callback_query: types.CallbackQuery, action: Cour
     if action == CourseAction.ADD_POINTS:
         buttons.button(
             text="➕ Добавить предмет",
-            callback_data=CourseCallback(action=CourseAction.ADD_COURSE)
+            callback_data=CourseCallback(action=CourseAction.ADD_COURSE, user_id=callback_query.from_user.id)
         )
     
     buttons.add(back_button(MenuCallback(action=MenuAction.POINTS, user_id=callback_query.from_user.id).pack()))
@@ -226,7 +226,7 @@ async def select_group(callback_query: types.CallbackQuery, callback_data: Group
 
     buttons.adjust(3)
     
-    buttons.add(back_button(GroupSelectCallback(faculty=callback_data.faculty).pack()))
+    buttons.add(back_button(GroupSelectCallback(faculty=callback_data.faculty, user_id=callback_query.from_user.id).pack()))
 
     await callback_query.message.edit_text("👥 Выберите группу:", reply_markup=buttons.as_markup())
 
@@ -252,7 +252,7 @@ async def add_points_course(callback_query: types.CallbackQuery, callback_data: 
     for i in range(1, 11):
         buttons.button(
             text=str(i),
-            callback_data=CourseCallback(action=CourseAction.INC, course=callback_data.course, count=i)
+            callback_data=CourseCallback(action=CourseAction.INC, course=callback_data.course, count=i, user_id=callback_query.from_user.id)
         )
     buttons.add(back_button(PointsCallback(action=PointsAction.ADD, user_id=callback_query.from_user.id).pack()))
     buttons.adjust(5)
@@ -277,7 +277,7 @@ async def delete_points_course(callback_query: types.CallbackQuery, callback_dat
                     course=callback_data.course,
                     timestamp=point.timestamp,
                     count=point.count,
-                    back_to=PointsCallback(action=PointsAction.DELETE, user_id=callback_query.from_user.id).pack()
+                    back_to=PointsCallback.__prefix__ + ' ' + PointsAction.DELETE.value
                 )
             )
         buttons.button(
@@ -285,7 +285,7 @@ async def delete_points_course(callback_query: types.CallbackQuery, callback_dat
             callback_data=CourseCallback(
                 action=CourseAction.DELETE_CONFIRM,
                 course=callback_data.course + "allcourse",
-                back_to=PointsCallback(action=PointsAction.DELETE, user_id=callback_query.from_user.id).pack()
+                back_to=PointsCallback.__prefix__ + ' ' + PointsAction.DELETE.value
             )
         )
     else:
@@ -319,10 +319,11 @@ async def add_points_count(callback_query: types.CallbackQuery, callback_data: C
     buttons.button(
         text="✏️ Добавить описание",
         callback_data=CourseCallback(
+            user_id=callback_query.from_user.id,
             action=CourseAction.DESC,
             course=callback_data.course,
             timestamp=points.timestamp,
-            back_to=PointsCallback(action=PointsAction.ADD, user_id=callback_query.from_user.id).pack()
+            back_to=PointsCallback.__prefix__ + ' ' + PointsAction.ADD.value
         )
     )
     buttons.add(back_button(PointsCallback(action=PointsAction.ADD, user_id=callback_query.from_user.id).pack()))
@@ -410,7 +411,7 @@ async def add_course_name(message: types.Message, state: FSMContext):
     for i in range(1, 11):
         buttons.button(
             text=str(i),
-            callback_data=CourseCallback(action=CourseAction.INC, course=encoded_course, count=i)
+            callback_data=CourseCallback(action=CourseAction.INC, course=encoded_course, count=i, user_id=user_id)
         )
     buttons.add(back_button(PointsCallback(action=PointsAction.ADD, user_id=user_id).pack()))
     buttons.adjust(5)
