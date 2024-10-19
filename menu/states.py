@@ -6,3 +6,4 @@ class MenuStates(StatesGroup):
 class PointsStates(StatesGroup):
     SetDescription = State()
     AddPoints = State()
+    AddCourse = State()

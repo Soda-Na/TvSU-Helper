@@ -1,5 +1,6 @@
 import aiosqlite
 import asyncio
+from datetime import datetime
 
 from .types import User, Points
 
@@ -109,7 +110,7 @@ class PointsTable(BaseTable):
         await self.execute_commit(
             """
             CREATE TABLE IF NOT EXISTS points (
-                id INTEGER PRIMARY KEY,
+                id INTEGER,
                 count INTEGER,
                 course TEXT,
                 timestamp INTEGER DEFAULT CURRENT_TIMESTAMP,
@@ -141,7 +142,18 @@ class PointsTable(BaseTable):
             return None
         return [Points(**dict(i)) for i in row]
 
-    async def delete_points(self, user_id: int, course: str, timestamp: int):
+    async def delete_points(self, user_id: int, course: str, timestamp: datetime):
+        await self.execute_commit(
+            """
+            DELETE FROM points
+            WHERE id = ? AND course = ? AND timestamp = ?
+            """,
+            user_id,
+            course,
+            timestamp
+        )
+
+    async def delete_all_points_by_course(self, user_id: int, course: str):
         await self.execute_commit(
             """
             DELETE FROM points
@@ -149,7 +161,7 @@ class PointsTable(BaseTable):
             """,
             user_id,
             course
-        ) 
+        )
 
     async def get_all_by_user(self, user_id: int):
         row = await self.fetchall(
@@ -158,6 +170,19 @@ class PointsTable(BaseTable):
             WHERE id = ?
             """,
             user_id
+        )
+        if row is None:
+            return None
+        return [Points(**dict(i)) for i in row]
+    
+    async def get_all_by_course(self, user_id: int, course: str):
+        row = await self.fetchall(
+            """
+            SELECT * FROM points
+            WHERE id = ? AND course = ?
+            """,
+            user_id,
+            course
         )
         if row is None:
             return None
@@ -174,6 +199,19 @@ class PointsTable(BaseTable):
             points.course,
             points.description
         )
+
+        row = await self.fetchone(
+            """
+            SELECT * FROM points
+            WHERE id = ? AND course = ?
+            ORDER BY timestamp DESC
+            LIMIT 1
+            """,
+            points.id,
+            points.course
+        )
+        
+        return Points(**dict(row))
     
     async def edit_description(self, user_id: int, course: str, timestamp: int, description: str):
         await self.execute_commit(
@@ -206,3 +244,17 @@ class PointsTable(BaseTable):
             sorted_by_course[point.course].append(point.count)
 
         return sorted_by_course
+    
+    async def get_point(self, user_id: int, course: str, timestamp: int):
+        row = await self.fetchone(
+            """
+            SELECT * FROM points
+            WHERE id = ? AND course = ? AND timestamp = ?
+            """,
+            user_id,
+            course,
+            timestamp
+        )
+        if row is None:
+            return None
+        return Points(**dict(row))
