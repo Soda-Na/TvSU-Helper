@@ -57,6 +57,8 @@ async def schedule(group_name: str):
         response = await client.get(f"https://timetable.tversu.ru/api/v1/group?group={group_id}&type=classes")
         timetable = response.json()[0]
 
+    (timetable)
+
     start_date = datetime.datetime.strptime(timetable["start"], "%d.%m.%Y")
     timezone = pytz.timezone("Europe/Moscow")
     start_date = timezone.localize(start_date)
@@ -66,6 +68,8 @@ async def schedule(group_name: str):
     week_type = "plus" if week_number % 2 == 1 else "minus"
     day_of_week = current_date.weekday() + 1
 
+    (week_number, week_type, day_of_week)
+
     def get_lessons(day, week):
         return sorted(
             [lesson for lesson in timetable["lessonsContainers"] if lesson["weekDay"] == day and (lesson["weekMark"] == "every" or lesson["weekMark"] == week)],
@@ -73,9 +77,9 @@ async def schedule(group_name: str):
         )
 
     lessons = get_lessons(day_of_week, week_type)
-    if lessons and timetable["lessonTimeData"][lessons[-1]["lessonNumber"]]["end"] < current_date.strftime("%H:%M"):
+    if lessons and timetable["lessonTimeData"][lessons[-1]["lessonNumber"]]["end"] < current_date.strftime("%H:%M") or day_of_week == 7:
         day_of_week += 1
-        count = 0
+        count = -1
         while True:
             if day_of_week == 8:
                 day_of_week = 1
@@ -466,12 +470,12 @@ async def more_details_about_course(callback_query: types.CallbackQuery, callbac
     buttons = keyboard.InlineKeyboardBuilder()
     if points:
         for point in points:
-            print(point.timestamp)
+            (point.timestamp)
             buttons.button(
                 text=f"{datetime.datetime.fromtimestamp(point.timestamp).strftime('%d.%m')} | {point.count}",
                 callback_data=CourseCallback(action=CourseAction.MORE_DETAILS_CONFIRM, course=callback_data.course, timestamp=point.timestamp, user_id=callback_query.from_user.id)
             )
-            print(point.timestamp)
+            (point.timestamp)
     else:
         await callback_query.message.edit_text(
             "📚 <i>Нет данных для отображения по этому предмету.</i>",
@@ -487,9 +491,9 @@ async def more_details_about_course(callback_query: types.CallbackQuery, callbac
 @dispatcher.callback_query(CourseCallback.filter(F.action == CourseAction.MORE_DETAILS_CONFIRM))
 async def more_details_about_course_confirm(callback_query: types.CallbackQuery, callback_data: CourseCallback):
     decoded_course = decode_eng_to_rus(callback_data.course)
-    print(decoded_course, callback_data.timestamp)
+    (decoded_course, callback_data.timestamp)
     points = await points_table.get_point(callback_query.from_user.id, decoded_course, callback_data.timestamp)
-    print(points)
+    (points)
 
     text = f"📚 <b>Подробности:</b>\n\n"
     text += f"📚 <b>Дата занесения:</b> {datetime.datetime.fromtimestamp(points.timestamp).strftime('%d.%m')}\n"
