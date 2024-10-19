@@ -1,3 +1,5 @@
+import re
+
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types          import InlineKeyboardMarkup, InlineKeyboardButton
 
@@ -52,3 +54,9 @@ def decode_eng_to_rus(text):
             result.append(text[i])
             i += 1
     return ''.join(result)
+
+def sort_key(s):
+    match = re.match(r"([A-Za-z]+)(\d+)([A-Za-z]*)", s)
+    if match:
+        return match.group(1), int(match.group(2)), match.group(3)
+    return s

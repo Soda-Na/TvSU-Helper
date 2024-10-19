@@ -1,5 +1,3 @@
-from datetime                       import datetime
-
 from aiogram.filters.callback_data  import CallbackData
 from enum                           import Enum
 
@@ -32,9 +30,16 @@ class CourseAction(Enum):
     MORE_DETAILS_CONFIRM = "mc"
     
 class CourseCallback(CallbackData, prefix="c", sep="|"):
+    user_id: int
     action: CourseAction
     course: str | None = None
-    timestamp: datetime | None = None
+    timestamp: int | None = None
     count: int | None = None
     description: str | None = None
     back_to: str | None = None
+
+
+class GroupSelectCallback(CallbackData, prefix="g"):
+    user_id: int
+    faculty: int | None = None
+    group: str | None = None

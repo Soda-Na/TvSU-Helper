@@ -1,6 +1,5 @@
 import aiosqlite
 import asyncio
-from datetime import datetime
 
 from .types import User, Points
 
@@ -25,7 +24,8 @@ class BaseTable:
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(query, args) as cursor:
-                return await cursor.fetchone()
+                row = await cursor.fetchone()
+                return row
 
     async def fetchall(self, query: str, *args):
         async with aiosqlite.connect(self.db_path) as db:
@@ -37,7 +37,8 @@ class BaseTable:
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(query, args) as cursor:
-                return await cursor.fetchone()
+                row = await cursor.fetchone()
+                return row
 
     async def add_column(self, table: str, column: str, col_type: str):
         await self.execute_commit(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
@@ -108,7 +109,7 @@ class PointsTable(BaseTable):
                 id INTEGER,
                 count INTEGER,
                 course TEXT,
-                timestamp INTEGER DEFAULT CURRENT_TIMESTAMP,
+                timestamp UNSIGNED BIG INT,
                 description TEXT
             )
             """
@@ -133,7 +134,7 @@ class PointsTable(BaseTable):
         )
         return [Points(**dict(row)) for row in rows] if rows else None
 
-    async def delete_points(self, user_id: int, course: str, timestamp: datetime):
+    async def delete_points(self, user_id: int, course: str, timestamp: int):
         await self.execute_commit(
             """
             DELETE FROM points
@@ -178,13 +179,14 @@ class PointsTable(BaseTable):
     async def add_points(self, points: Points):
         await self.execute_commit(
             """
-            INSERT INTO points (id, count, course, description)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO points (id, count, course, description, timestamp)
+            VALUES (?, ?, ?, ?, ?)
             """,
             points.id,
             points.count,
             points.course,
-            points.description
+            points.description,
+            points.timestamp
         )
 
         row = await self.fetchone(

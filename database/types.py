@@ -1,4 +1,3 @@
-import datetime
 from pydantic import BaseModel
 
 class User(BaseModel):
@@ -10,4 +9,4 @@ class Points(BaseModel):
     count       : int
     course      : str
     description : str | None = None
-    timestamp   : datetime.datetime | None = None
+    timestamp   : int | None = None

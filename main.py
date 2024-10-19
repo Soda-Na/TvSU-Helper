@@ -6,6 +6,7 @@ import journal
 from aiogram import Dispatcher, Bot
 from aiogram.client.default import DefaultBotProperties
 
+from middlewares import CallbackQueryMiddleware
 
 dispatcher = Dispatcher()
 
@@ -15,6 +16,7 @@ async def main():
     dispatcher.startup.register(lambda: print("Bot started"))
 
     dispatcher.include_router(journal.dispatcher)
+    dispatcher.callback_query.middleware(CallbackQueryMiddleware())
     
     await dispatcher.start_polling(bot)
 
