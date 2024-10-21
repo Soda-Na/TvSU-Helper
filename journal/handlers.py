@@ -2,7 +2,7 @@ import datetime
 import pytz
 
 from aiogram                    import types, F, Router
-from aiogram.filters.command    import CommandStart
+from aiogram.filters.command    import CommandStart, Command
 from aiogram.utils              import keyboard
 from aiogram.fsm.context        import FSMContext
 from httpx                      import AsyncClient
@@ -11,7 +11,7 @@ from .callbacks                 import MenuCallback, MenuAction, PointsCallback,
 from .states                    import PointsStates
 from utils                      import back_button_markup, back_button, encode_rus_to_eng, decode_eng_to_rus, sort_key
 
-from database                   import UsersTable, PointsTable, User, Points
+from database                   import UsersTable, PointsTable, GroupTable, User, Points, Group
 
 dispatcher = Router()
 
@@ -525,3 +525,5 @@ async def more_details_about_course_confirm(callback_query: types.CallbackQuery,
     buttons.adjust(1)
 
     await callback_query.message.edit_text(text, reply_markup=buttons.as_markup())
+
+@dispatcher.message(Command("Дежурство"))

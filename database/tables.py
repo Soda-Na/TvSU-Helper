@@ -1,7 +1,7 @@
 import aiosqlite
 import asyncio
 
-from .types import User, Points
+from .types import User, Points, Group
 
 class BaseTable:
     def __init__(self, db_path="database.db"):
@@ -242,3 +242,60 @@ class PointsTable(BaseTable):
             timestamp
         )
         return Points(**dict(row)) if row else None
+    
+class GroupTable(BaseTable):
+    def __init__(self, db_path="database.db"):
+        super().__init__(db_path)
+        asyncio.run(self.create_table())
+
+    async def create_table(self):
+        await self.execute_commit(
+            """
+            CREATE TABLE IF NOT EXISTS groups (
+                id INTEGER PRIMARY KEY,
+                captain_id INTEGER NOT NULL default NULL,
+                deputies TEXT default "",
+                members TEXT default ""
+            )
+            """
+        )
+
+    async def add_group(self, group_id: int):
+        await self.execute_commit(
+            """
+            INSERT INTO groups (id)
+            VALUES (?)
+            """,
+            group_id
+        )
+
+    async def get_group(self, group_id: int):
+        row = await self.fetchone(
+            """
+            SELECT * FROM groups
+            WHERE id = ?
+            """,
+            group_id
+        )
+        return Group(**dict(row)) if row else None
+    
+    async def get_groups(self):
+        rows = await self.fetchall(
+            """
+            SELECT * FROM groups
+            """
+        )
+        return [Group(**dict(row)) for row in rows] if rows else None
+    
+    async def edit_group(self, group: Group):
+        await self.execute_commit(
+            """
+            UPDATE groups
+            SET captain_id = ?, deputies = ?, members = ?
+            WHERE id = ?
+            """,
+            group.captain_id,
+            "\n".join(group.deputies),
+            "\n".join(group.members),
+            group.id
+        )
