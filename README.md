@@ -1,36 +1,46 @@
-# Tver State University Helper Bot
+# 🎓 Tver State University Helper Bot
 
-This bot offers several features to help students manage their academic life:
+The **Tver State University Helper Bot** is designed to simplify student life by offering essential academic tools, including score recording, group and faculty selection, and up-to-date schedule parsing. Stay organized and on top of your academic progress with ease! 🧑‍🎓
 
-## Features
+## ✨ Features
 
-- **Record Scores**: Allows students to record their scores for different subjects.
-- **Group and Faculty Selection**: Students can select any group and faculty, which are parsed from the university's website.
-- **Schedule Parsing**: Parses the schedule based on the selected group, providing up-to-date information on classes and timings.
+- **📝 Record Scores**: Easily log your scores for different subjects and track your academic performance.
+- **🏛 Group & Faculty Selection**: Choose your group and faculty, dynamically parsed from the university's website.
+- **📅 Schedule Parsing**: Get the latest class schedule based on your selected group, so you never miss a lecture!
 
-## Installation
+## 🚀 Installation Guide
 
-1. Clone the repository:
-    ```sh
+1. **Clone the Repository**:
+    ```bash
     git clone https://github.com/Soda-Na/TvSU-Helper
     ```
 
-2. Open the project directory:
-    ```sh
+2. **Navigate to the Project Directory**:
+    ```bash
     cd TvSU-Helper
     ```
 
-3. Install the dependencies:
-    ```sh
+3. **Install Required Dependencies**:
+    ```bash
     pip install -r requirements.txt
     ```
 
-4. Create a `.env` file in the root directory and add your bot token:
-    ```
-    BOT_TOKEN=your_bot_token_here
-    ```
+4. **Set up the Bot Token**:
+    - Create a `.env` file in the root directory.
+    - Add your bot token inside the file:
+      ```bash
+      BOT_TOKEN=your_bot_token_here
+      ```
 
-5. Run the bot:
-    ```sh
+5. **Start the Bot**:
+    ```bash
     python main.py
     ```
+
+## 🛠 Troubleshooting
+
+If you encounter any issues during setup or usage, please refer to the [issue tracker](https://github.com/Soda-Na/TvSU-Helper/issues) or create a new issue for support.
+
+## 🙌 Contributing
+
+Contributions are welcome! Feel free to submit a pull request or suggest new features by opening an issue.
