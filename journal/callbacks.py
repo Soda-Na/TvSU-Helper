@@ -6,6 +6,7 @@ class MenuAction(Enum):
     POINTS  = "pts"
     MORE_DETAILS = "m"
     CHANGE_GROUP = "cg"
+    GROUP_MENU = "gm"
 
 class MenuCallback(CallbackData, prefix="m"):
     action: MenuAction
@@ -38,8 +39,16 @@ class CourseCallback(CallbackData, prefix="c", sep="|"):
     description: str | None = None
     back_to: str | None = None
 
-
 class GroupSelectCallback(CallbackData, prefix="g"):
     user_id: int
     faculty: int | None = None
     group: str | None = None
+
+class GroupMenuAction(Enum):
+    CHANGE_GROUP = "cg"
+
+class GroupMenuCallback(CallbackData, prefix="gm"):
+    user_id: int
+    faculty: int | None = None
+    group: str | None = None
+    action: GroupMenuAction

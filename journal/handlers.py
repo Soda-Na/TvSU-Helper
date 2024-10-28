@@ -7,7 +7,13 @@ from aiogram.utils              import keyboard
 from aiogram.fsm.context        import FSMContext
 from httpx                      import AsyncClient
 
-from .callbacks                 import MenuCallback, MenuAction, PointsCallback, PointsAction, CourseCallback, CourseAction, GroupSelectCallback
+from .callbacks                 import (
+                                    MenuCallback, MenuAction, 
+                                    PointsCallback, PointsAction, 
+                                    CourseCallback, CourseAction, 
+                                    GroupSelectCallback, 
+                                    GroupMenuCallback, GroupMenuAction
+                                )
 from .states                    import PointsStates
 from utils                      import back_button_markup, back_button, encode_rus_to_eng, decode_eng_to_rus, sort_key
 
@@ -17,6 +23,7 @@ dispatcher = Router()
 
 users_table = UsersTable()
 points_table = PointsTable()
+group_table = GroupTable()
 
 async def profile_menu(message: types.Message, user_id: int = None):
     user = await users_table.get_user(user_id)
@@ -33,6 +40,13 @@ async def profile_menu(message: types.Message, user_id: int = None):
         text="👥 Сменить группу",
         callback_data=MenuCallback(action=MenuAction.CHANGE_GROUP, user_id=user_id)
     )
+
+    if (await message.bot.get_chat_member(message.chat.id, message.from_user.id)).status == types.ChatMemberOwner:
+        buttons.button(
+            text="🔧 Настройки группы",
+            callback_data=MenuCallback(action=MenuAction.GROUP_MENU, user_id=user_id)
+        )
+
     buttons.adjust(1)
 
     profile_text = f"👤 <b>Профиль</b>\n👥 <b>Группа:</b> {user.group}\n\n"
@@ -237,8 +251,10 @@ async def select_group(callback_query: types.CallbackQuery, callback_data: Group
 @dispatcher.callback_query(GroupSelectCallback.filter(F.group != None))
 async def set_group(callback_query: types.CallbackQuery, callback_data: GroupSelectCallback):
     await users_table.update_group(callback_query.from_user.id, callback_data.group)
-    await callback_query.message.edit_text("👥 Группа успешно изменена!", reply_markup=back_button_markup(MenuCallback(action=MenuAction.PROFILE, user_id=callback_query.from_user.id).pack()))
-
+    await callback_query.message.edit_text(
+        "👥 Группа успешно изменена!", 
+        reply_markup=back_button_markup(MenuCallback(action=MenuAction.PROFILE, user_id=callback_query.from_user.id).pack())
+    )
 
 @dispatcher.callback_query(PointsCallback.filter(F.action == PointsAction.ADD))
 async def add_points(callback_query: types.CallbackQuery):
@@ -526,4 +542,16 @@ async def more_details_about_course_confirm(callback_query: types.CallbackQuery,
 
     await callback_query.message.edit_text(text, reply_markup=buttons.as_markup())
 
-@dispatcher.message(Command("Дежурство"))
+@dispatcher.callback_query(MenuCallback.filter(F.action == MenuAction.GROUP_MENU))
+async def group_menu(callback_query: types.CallbackQuery):
+    buttons = keyboard.InlineKeyboardBuilder()
+    buttons.button(
+        text="🔧 Изменить группу",
+        callback_data=GroupMenuCallback(action=GroupMenuAction.CHANGE_GROUP, user_id=callback_query.from_user.id)
+    )
+    buttons.add(back_button(MenuCallback(action=MenuAction.PROFILE, user_id=callback_query.from_user.id).pack()))
+    buttons.adjust(1)
+
+    await callback_query.message.edit_text("👥 <b>Настройки группы:</b>", reply_markup=buttons.as_markup())
+
+@dispatcher.callback_query(GroupMenuCallback.filter(F.action == GroupMenuAction.CHANGE_GROUP))
