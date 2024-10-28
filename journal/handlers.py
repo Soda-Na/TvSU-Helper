@@ -1,88 +1,62 @@
 import datetime
 import pytz
 
+from httpx                      import AsyncClient
 from aiogram                    import types, F, Router
-from aiogram.filters.command    import CommandStart, Command
+from aiogram.filters.command    import CommandStart
 from aiogram.utils              import keyboard
 from aiogram.fsm.context        import FSMContext
-from httpx                      import AsyncClient
 
+from utils                      import (
+    back_button_markup, back_button, 
+    encode_rus_to_eng, decode_eng_to_rus, 
+    sort_key
+)
+from database                   import (
+    UsersTable, PointsTable, 
+    GroupTable,
+    User, Points
+)
 from .callbacks                 import (
-                                    MenuCallback, MenuAction, 
-                                    PointsCallback, PointsAction, 
-                                    CourseCallback, CourseAction, 
-                                    GroupSelectCallback, 
-                                    GroupMenuCallback, GroupMenuAction
-                                )
+    MenuCallback, MenuAction, 
+    PointsCallback, PointsAction, 
+    CourseCallback, CourseAction, 
+    GroupSelectCallback, GroupMenuCallback, GroupMenuAction
+)
 from .states                    import PointsStates
-from utils                      import back_button_markup, back_button, encode_rus_to_eng, decode_eng_to_rus, sort_key
-
-from database                   import UsersTable, PointsTable, GroupTable, User, Points, Group
 
 dispatcher = Router()
-
 users_table = UsersTable()
 points_table = PointsTable()
 group_table = GroupTable()
 
 async def profile_menu(message: types.Message, user_id: int = None):
-    user = await users_table.get_user(user_id)
-    if user is None:
-        await users_table.add_user(User(id=user_id, group="не указана"))
-        user = await users_table.get_user(user_id)
-
+    user = await users_table.get_user(user_id) or await users_table.add_user(User(id=user_id, group="не указана"))
     buttons = keyboard.InlineKeyboardBuilder()
-    buttons.button(
-        text="📊 Мои баллы",
-        callback_data=MenuCallback(action=MenuAction.POINTS, user_id=user_id)
-    )
-    buttons.button(
-        text="👥 Сменить группу",
-        callback_data=MenuCallback(action=MenuAction.CHANGE_GROUP, user_id=user_id)
-    )
-
+    buttons.button(text="📊 Мои баллы", callback_data=MenuCallback(action=MenuAction.POINTS, user_id=user_id))
+    buttons.button(text="👥 Сменить группу", callback_data=MenuCallback(action=MenuAction.CHANGE_GROUP, user_id=user_id))
     if (await message.bot.get_chat_member(message.chat.id, message.from_user.id)).status == types.ChatMemberOwner:
-        buttons.button(
-            text="🔧 Настройки группы",
-            callback_data=MenuCallback(action=MenuAction.GROUP_MENU, user_id=user_id)
-        )
-
+        buttons.button(text="🔧 Настройки группы", callback_data=MenuCallback(action=MenuAction.GROUP_MENU, user_id=user_id))
     buttons.adjust(1)
-
     profile_text = f"👤 <b>Профиль</b>\n👥 <b>Группа:</b> {user.group}\n\n"
-    if user.group != "не указана":
-        profile_text += await schedule(user.group)
-    else:
-        profile_text += "📅 <i>Расписание недоступно, укажите группу.</i>"
-    if message.from_user.id == message.bot.id:
-        await message.edit_text(profile_text, reply_markup=buttons.as_markup())
-    else:
-        await message.answer(profile_text, reply_markup=buttons.as_markup())
+    profile_text += await schedule(user.group) if user.group != "не указана" else "📅 <i>Расписание недоступно, укажите группу.</i>"
+    await (message.edit_text if message.from_user.id == message.bot.id else message.answer)(profile_text, reply_markup=buttons.as_markup())
 
 async def schedule(group_name: str):
     async with AsyncClient() as client:
         response = await client.get("https://timetable.tversu.ru/api/v1/selectors")
         groups = response.json()["groups"]
-
         group_id = next((group["groupId"] for group in groups if group["groupName"] == group_name), None)
         if not group_id:
             return "Группа не найдена."
-
         response = await client.get(f"https://timetable.tversu.ru/api/v1/group?group={group_id}&type=classes")
         timetable = response.json()[0]
 
-    (timetable)
-
-    start_date = datetime.datetime.strptime(timetable["start"], "%d.%m.%Y")
-    timezone = pytz.timezone("Europe/Moscow")
-    start_date = timezone.localize(start_date)
-    current_date = datetime.datetime.now(tz=timezone)
-
+    start_date = pytz.timezone("Europe/Moscow").localize(datetime.datetime.strptime(timetable["start"], "%d.%m.%Y"))
+    current_date = datetime.datetime.now(tz=pytz.timezone("Europe/Moscow"))
     week_number = (current_date - start_date).days // 7
     week_type = "plus" if week_number % 2 == 1 else "minus"
     day_of_week = current_date.weekday() + 1
-
-    (week_number, week_type, day_of_week)
 
     def get_lessons(day, week):
         return sorted(
@@ -93,90 +67,41 @@ async def schedule(group_name: str):
     lessons = get_lessons(day_of_week, week_type)
     if lessons and timetable["lessonTimeData"][lessons[-1]["lessonNumber"]]["end"] < current_date.strftime("%H:%M") or day_of_week == 7:
         day_of_week += 1
-        count = -1
-        while True:
+        while not (lessons := get_lessons(day_of_week, week_type)):
             if day_of_week == 8:
-                day_of_week = 1
-                week_type = "plus" if week_type == "minus" else "minus"
-                count += 1
-            lessons = get_lessons(day_of_week, week_type)
-            if lessons:
-                break
-            day_of_week += 1
-
-        text = f"📅 <b>Расписание на {'после' * count}завтра:</b>\n\n"
+                day_of_week, week_type = 1, "plus" if week_type == "minus" else "minus"
+        text = f"📅 <b>Расписание на {'после' * (day_of_week == 1)}завтра:</b>\n\n"
     else:
         text = "📅 <b>Расписание на сегодня:</b>\n\n"
 
     for lesson in lessons:
         lesson_time = timetable["lessonTimeData"][lesson["lessonNumber"]]
-        if lesson_time["start"] < current_date.strftime("%H:%M") < lesson_time["end"] and 'завтра' not in text:
-            text += f"🕒<b>{lesson_time['start']}-{lesson_time['end']}</b> <i>{lesson['texts'][1]}</i> | <code>{lesson['texts'][3].split()[-1]}</code>\n"
-        else:
-            text += f"🕒<code>{lesson_time['start']}-{lesson_time['end']}</code> <i>{lesson['texts'][1]}</i> | <code>{lesson['texts'][3].split()[-1]}</code>\n"
+        text += f"🕒<{'b' if lesson_time['start'] < current_date.strftime('%H:%M') < lesson_time['end'] else 'code'}>{lesson_time['start']}-{lesson_time['end']}</{'b' if lesson_time['start'] < current_date.strftime('%H:%M') < lesson_time['end'] else 'code'}> <i>{lesson['texts'][1]}</i> | <code>{lesson['texts'][3].split()[-1]}</code>\n"
 
     return text
 
 async def points_menu(message: types.Message, user_id: int):
-    user = await users_table.get_user(user_id)
-    if user is None:
-        await users_table.add_user(User(id=user_id, group="не указана"))
-        user = await users_table.get_user(user_id)
-
+    user = await users_table.get_user(user_id) or await users_table.add_user(User(id=user_id, group="не указана"))
     points = await points_table.get_sorted_points(user_id)
-
     buttons = keyboard.InlineKeyboardBuilder()
-    buttons.button(
-        text="➕ Добавить баллы",
-        callback_data=PointsCallback(action=PointsAction.ADD, user_id=user_id)
-    )
-    buttons.button(
-        text="➖ Удалить баллы",
-        callback_data=PointsCallback(action=PointsAction.DELETE, user_id=user_id)
-    )
-    buttons.button(
-        text="🔍 Подробнее",
-        callback_data=MenuCallback(action=MenuAction.MORE_DETAILS, user_id=user_id)
-    )
+    buttons.button(text="➕ Добавить баллы", callback_data=PointsCallback(action=PointsAction.ADD, user_id=user_id))
+    buttons.button(text="➖ Удалить баллы", callback_data=PointsCallback(action=PointsAction.DELETE, user_id=user_id))
+    buttons.button(text="🔍 Подробнее", callback_data=MenuCallback(action=MenuAction.MORE_DETAILS, user_id=user_id))
     buttons.add(back_button(MenuCallback(action=MenuAction.PROFILE, user_id=user_id).pack()))
     buttons.adjust(1)
-
-    text = "📊 <b>Мои баллы:</b>\n\n"
-    if points:
-        for course, points in points.items():
-            text += f"📚 <b>{course}:</b> {' '.join([str(i) for i in points])} | <b>{sum(points)}</b>\n"
-    else:
-        text += "📚 <i>Нет данных</i>"
-
-    if message.from_user.id == message.bot.id:
-        await message.edit_text(text, reply_markup=buttons.as_markup())
-    else:
-        await message.answer(text, reply_markup=buttons.as_markup())
+    text = "📊 <b>Мои баллы:</b>\n\n" + "\n".join([f"📚 <b>{course}:</b> {' '.join(map(str, points))} | <b>{sum(points)}</b>" for course, points in points.items()]) if points else "📚 <i>Нет данных</i>"
+    await (message.edit_text if message.from_user.id == message.bot.id else message.answer)(text, reply_markup=buttons.as_markup())
 
 async def handle_points_action(callback_query: types.CallbackQuery, action: CourseAction, text_if_empty: str):
     points = await points_table.get_sorted_points(callback_query.from_user.id)
-
     buttons = keyboard.InlineKeyboardBuilder()
-    if points:
-        text = "📚 <b>Выберите предмет:</b>"
-        for course in points.keys():
-            encoded_course = encode_rus_to_eng(course)
-            buttons.button(
-                text=course,
-                callback_data=CourseCallback(action=action, course=encoded_course, user_id=callback_query.from_user.id)
-            )
-    else:
-        text = text_if_empty
-
+    text = "📚 <b>Выберите предмет:</b>" if points else text_if_empty
+    for course in points.keys() if points else []:
+        buttons.button(text=course, callback_data=CourseCallback(action=action, course=encode_rus_to_eng(course), user_id=callback_query.from_user.id))
     if action == CourseAction.ADD_POINTS:
-        buttons.button(
-            text="➕ Добавить предмет",
-            callback_data=CourseCallback(action=CourseAction.ADD_COURSE, user_id=callback_query.from_user.id)
-        )
-    
+        buttons.button(text="➕ Добавить предмет", callback_data=CourseCallback(action=CourseAction.ADD_COURSE, user_id=callback_query.from_user.id))
     buttons.add(back_button(MenuCallback(action=MenuAction.POINTS, user_id=callback_query.from_user.id).pack()))
     buttons.adjust(1)
-
     await callback_query.message.edit_text(text, reply_markup=buttons.as_markup())
 
 @dispatcher.message(CommandStart())
@@ -197,64 +122,41 @@ async def points(callback_query: types.CallbackQuery):
 async def change_group(callback_query: types.CallbackQuery, state: FSMContext):
     async with AsyncClient() as client:
         response = await client.get("https://timetable.tversu.ru/api/v1/selectors")
-        
         groups = response.json()["groups"]
-
-        faculty_list = []
-        for group in groups:
-            faculty_name = group["facultyName"]
-            faculty_list.append(faculty_name)
-
+        faculty_list = list(set(group["facultyName"] for group in groups))
     buttons = keyboard.InlineKeyboardBuilder()
-    for faculty in set(faculty_list):
-        buttons.button(
-            text=faculty,
-            callback_data=GroupSelectCallback(faculty=faculty_list.index(faculty), user_id=callback_query.from_user.id)
-        )
+    for faculty in faculty_list:
+        buttons.button(text=faculty, callback_data=GroupSelectCallback(faculty=faculty_list.index(faculty), user_id=callback_query.from_user.id))
     buttons.add(back_button(MenuCallback(action=MenuAction.PROFILE, user_id=callback_query.from_user.id).pack()))
     buttons.adjust(1)
+
+    await state.update_data(faculty_list=faculty_list)
 
     await callback_query.message.edit_text("👥 Выберите факультет:", reply_markup=buttons.as_markup())
 
 @dispatcher.callback_query(GroupSelectCallback.filter(F.faculty != None))
 async def select_group(callback_query: types.CallbackQuery, callback_data: GroupSelectCallback, state: FSMContext):
+    faculty_list = (await state.get_data())["faculty_list"]
+    await state.clear()
+
     async with AsyncClient() as client:
         response = await client.get("https://timetable.tversu.ru/api/v1/selectors")
-
         groups = response.json()["groups"]
-
-        faculty_list = []
         faculty_dict = {}
         for group in groups:
-            faculty_name = group["facultyName"]
-            faculty_list.append(faculty_name)
-            group_name = group["groupName"]
-            if faculty_name not in faculty_dict:
-                faculty_dict[faculty_name] = []
-            faculty_dict[faculty_name].append(group_name)
-
+            faculty_dict.setdefault(group["facultyName"], []).append(group["groupName"])
         sorted_groups = sorted(faculty_dict[faculty_list[callback_data.faculty]], key=sort_key)
-
     buttons = keyboard.InlineKeyboardBuilder()
     for group in sorted_groups:
-        buttons.button(
-            text=group,
-            callback_data=GroupSelectCallback(group=group, user_id=callback_query.from_user.id)
-        )
-
+        buttons.button(text=group, callback_data=GroupSelectCallback(group=group, user_id=callback_query.from_user.id))
     buttons.adjust(3)
-    
     buttons.add(back_button(GroupSelectCallback(faculty=callback_data.faculty, user_id=callback_query.from_user.id).pack()))
-
     await callback_query.message.edit_text("👥 Выберите группу:", reply_markup=buttons.as_markup())
 
 @dispatcher.callback_query(GroupSelectCallback.filter(F.group != None))
 async def set_group(callback_query: types.CallbackQuery, callback_data: GroupSelectCallback):
     await users_table.update_group(callback_query.from_user.id, callback_data.group)
-    await callback_query.message.edit_text(
-        "👥 Группа успешно изменена!", 
-        reply_markup=back_button_markup(MenuCallback(action=MenuAction.PROFILE, user_id=callback_query.from_user.id).pack())
-    )
+    await callback_query.message.edit_text("👥 Группа успешно изменена!", reply_markup=back_button_markup(MenuCallback(action=MenuAction.PROFILE, user_id=callback_query.from_user.id).pack()))
 
 @dispatcher.callback_query(PointsCallback.filter(F.action == PointsAction.ADD))
 async def add_points(callback_query: types.CallbackQuery):
@@ -267,94 +169,38 @@ async def delete_points(callback_query: types.CallbackQuery):
 @dispatcher.callback_query(CourseCallback.filter(F.action == CourseAction.ADD_POINTS))
 async def add_points_course(callback_query: types.CallbackQuery, callback_data: CourseCallback):
     decoded_course = decode_eng_to_rus(callback_data.course)
-    
     buttons = keyboard.InlineKeyboardBuilder()
     for i in range(1, 11):
-        buttons.button(
-            text=str(i),
-            callback_data=CourseCallback(action=CourseAction.INC, course=callback_data.course, count=i, user_id=callback_query.from_user.id)
-        )
+        buttons.button(text=str(i), callback_data=CourseCallback(action=CourseAction.INC, course=callback_data.course, count=i, user_id=callback_query.from_user.id))
     buttons.add(back_button(PointsCallback(action=PointsAction.ADD, user_id=callback_query.from_user.id).pack()))
     buttons.adjust(5)
-
-    await callback_query.message.edit_text(
-        f"📊 Выберите количество баллов по предмету {decoded_course}:",
-        reply_markup=buttons.as_markup()
-    )
+    await callback_query.message.edit_text(f"📊 Выберите количество баллов по предмету {decoded_course}:", reply_markup=buttons.as_markup())
 
 @dispatcher.callback_query(CourseCallback.filter(F.action == CourseAction.DELETE))
 async def delete_points_course(callback_query: types.CallbackQuery, callback_data: CourseCallback):
     decoded_course = decode_eng_to_rus(callback_data.course)
-    points: list[Points] = await points_table.get_all_by_course(callback_query.from_user.id, decoded_course)
-
+    points = await points_table.get_all_by_course(callback_query.from_user.id, decoded_course)
     buttons = keyboard.InlineKeyboardBuilder()
     if points:
         for point in points:
-            buttons.button(
-                text=f"{datetime.datetime.fromtimestamp(point.timestamp).strftime('%d.%m')} | {point.count}",
-                callback_data=CourseCallback(
-                    action=CourseAction.DELETE_CONFIRM,
-                    course=callback_data.course,
-                    timestamp=point.timestamp,
-                    count=point.count,
-                    back_to=PointsCallback.__prefix__ + ' ' + PointsAction.DELETE.value,
-                    user_id=callback_query.from_user.id
-                )
-            )
-        buttons.button(
-            text="❌ Удалить все",
-            callback_data=CourseCallback(
-                action=CourseAction.DELETE_CONFIRM,
-                course=callback_data.course + "allcourse",
-                back_to=PointsCallback.__prefix__ + ' ' + PointsAction.DELETE.value,
-                user_id=callback_query.from_user.id
-            )
-        )
+            buttons.button(text=f"{datetime.datetime.fromtimestamp(point.timestamp).strftime('%d.%m')} | {point.count}", callback_data=CourseCallback(action=CourseAction.DELETE_CONFIRM, course=callback_data.course, timestamp=point.timestamp, count=point.count, back_to=PointsCallback.__prefix__ + ' ' + PointsAction.DELETE.value, user_id=callback_query.from_user.id))
+        buttons.button(text="❌ Удалить все", callback_data=CourseCallback(action=CourseAction.DELETE_CONFIRM, course=callback_data.course + "allcourse", back_to=PointsCallback.__prefix__ + ' ' + PointsAction.DELETE.value, user_id=callback_query.from_user.id))
     else:
-        await callback_query.message.edit_text(
-            "📚 <i>Нет баллов для удаления по этому предмету.</i>",
-            reply_markup=back_button_markup(PointsCallback(action=PointsAction.DELETE, user_id=callback_query.from_user.id).pack())
-        )
+        await callback_query.message.edit_text("📚 <i>Нет баллов для удаления по этому предмету.</i>", reply_markup=back_button_markup(PointsCallback(action=PointsAction.DELETE, user_id=callback_query.from_user.id).pack()))
         return
-
     buttons.add(back_button(PointsCallback(action=PointsAction.DELETE, user_id=callback_query.from_user.id).pack()))
     buttons.adjust(1)
-
-    await callback_query.message.edit_text(
-        "🗑️ Выберите балл для удаления:",
-        reply_markup=buttons.as_markup()
-    )
+    await callback_query.message.edit_text("🗑️ Выберите балл для удаления:", reply_markup=buttons.as_markup())
 
 @dispatcher.callback_query(CourseCallback.filter(F.action == CourseAction.INC))
 async def add_points_count(callback_query: types.CallbackQuery, callback_data: CourseCallback):
     decoded_course = decode_eng_to_rus(callback_data.course)
-    points = await points_table.add_points(
-        Points(
-            id=callback_query.from_user.id,
-            count=callback_data.count,
-            course=decoded_course,
-            timestamp=int(datetime.datetime.now().timestamp())
-        )
-    )
-
+    points = await points_table.add_points(Points(id=callback_query.from_user.id, count=callback_data.count, course=decoded_course, timestamp=int(datetime.datetime.now().timestamp())))
     buttons = keyboard.InlineKeyboardBuilder()
-    buttons.button(
-        text="✏️ Добавить описание",
-        callback_data=CourseCallback(
-            user_id=callback_query.from_user.id,
-            action=CourseAction.DESC,
-            course=callback_data.course,
-            timestamp=points.timestamp,
-            back_to=PointsCallback.__prefix__ + ' ' + PointsAction.ADD.value
-        )
-    )
+    buttons.button(text="✏️ Добавить описание", callback_data=CourseCallback(user_id=callback_query.from_user.id, action=CourseAction.DESC, course=callback_data.course, timestamp=points.timestamp, back_to=PointsCallback.__prefix__ + ' ' + PointsAction.ADD.value))
     buttons.add(back_button(PointsCallback(action=PointsAction.ADD, user_id=callback_query.from_user.id).pack()))
     buttons.adjust(1)
-
-    await callback_query.message.edit_text(
-        "✅ Балл успешно добавлен!",
-        reply_markup=buttons.as_markup()
-    )
+    await callback_query.message.edit_text("✅ Балл успешно добавлен!", reply_markup=buttons.as_markup())
 
 @dispatcher.callback_query(CourseCallback.filter(F.action == CourseAction.DESC))
 async def add_points_description(callback_query: types.CallbackQuery, callback_data: CourseCallback, state: FSMContext):
@@ -364,62 +210,34 @@ async def add_points_description(callback_query: types.CallbackQuery, callback_d
 
 @dispatcher.message(PointsStates.SetDescription)
 async def add_points_description(message: types.Message, state: FSMContext):
-    timestamp = (await state.get_data())["timestamp"]
-    course = (await state.get_data())["course"]
-    back_to: str = (await state.get_data())["back_to"]
-
-    back_to = back_to.split(" ")
-    prefix = back_to[0]
-    action = back_to[1]
-
+    data = await state.get_data()
+    timestamp, course, back_to = data["timestamp"], data["course"], data["back_to"].split(" ")
+    prefix, action = back_to[0], back_to[1]
     for callbacks in [MenuCallback, PointsCallback, CourseCallback]:
         if prefix == callbacks.__prefix__:
             back_to = callbacks(action=action, user_id=message.from_user.id, course=course, timestamp=timestamp).pack()
             break
-
     await message.delete()
-    
-    await points_table.edit_description(
-        message.from_user.id,
-        decode_eng_to_rus(course),
-        timestamp,
-        message.text,
-    )
-
-    message = (await state.get_data())["message"]
+    await points_table.edit_description(message.from_user.id, decode_eng_to_rus(course), timestamp, message.text)
+    await data["message"].edit_text("✅ Описание успешно добавлено!", reply_markup=back_button_markup(back_to))
     await state.clear()
-
-    await message.edit_text(
-        "✅ Описание успешно добавлено!",
-        reply_markup=back_button_markup(back_to)
-    )
 
 @dispatcher.callback_query(CourseCallback.filter(F.action == CourseAction.DELETE_CONFIRM))
 async def delete_points_count(callback_query: types.CallbackQuery, callback_data: CourseCallback):
     back_to = callback_data.back_to.split(" ")
-    prefix = back_to[0]
-    action = back_to[1]
-
+    prefix, action = back_to[0], back_to[1]
     for callbacks in [MenuCallback, PointsCallback, CourseCallback]:
         if prefix == callbacks.__prefix__:
             back_to = callbacks(action=action, user_id=callback_query.from_user.id, course=callback_data.course, timestamp=callback_data.timestamp).pack()
             break
-
     if callback_data.course.endswith("allcourse"):
         decoded_course = decode_eng_to_rus(callback_data.course[:-len("allcourse")])
         await points_table.delete_all_points_by_course(callback_query.from_user.id, decoded_course)
-        await callback_query.message.edit_text(
-            f"✅ Все баллы по предмету {decoded_course} успешно удалены!",
-            reply_markup=back_button_markup(back_to)
-        )
+        await callback_query.message.edit_text(f"✅ Все баллы по предмету {decoded_course} успешно удалены!", reply_markup=back_button_markup(back_to))
         return
     decoded_course = decode_eng_to_rus(callback_data.course)
-    
     await points_table.delete_points(callback_query.from_user.id, decoded_course, callback_data.timestamp)
-    await callback_query.message.edit_text(
-        "✅ Балл успешно удален!",
-        reply_markup=back_button_markup(back_to)
-    )
+    await callback_query.message.edit_text("✅ Балл успешно удален!", reply_markup=back_button_markup(back_to))
 
 @dispatcher.callback_query(CourseCallback.filter(F.action == CourseAction.ADD_COURSE))
 async def add_course(callback_query: types.CallbackQuery, state: FSMContext):
@@ -554,4 +372,4 @@ async def group_menu(callback_query: types.CallbackQuery):
 
     await callback_query.message.edit_text("👥 <b>Настройки группы:</b>", reply_markup=buttons.as_markup())
 
-@dispatcher.callback_query(GroupMenuCallback.filter(F.action == GroupMenuAction.CHANGE_GROUP))
+# @dispatcher.callback_query(GroupMenuCallback.filter(F.action == GroupMenuAction.CHANGE_GROUP))
