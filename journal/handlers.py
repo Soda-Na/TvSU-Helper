@@ -1,31 +1,34 @@
 import datetime
 import pytz
 
-from httpx                      import AsyncClient
-from aiogram                    import types, F, Router
-from aiogram.filters.command    import CommandStart
-from aiogram.utils              import keyboard
-from aiogram.fsm.context        import FSMContext
+print("Importing from journal.handlers...")
 
-from utils                      import (
+from httpx import AsyncClient
+from aiogram import types, F, Router
+from aiogram.filters.command import CommandStart
+from aiogram.utils import keyboard
+from aiogram.fsm.context import FSMContext
+
+from utils import (
     back_button_markup, back_button, 
     encode_rus_to_eng, decode_eng_to_rus, 
     sort_key
 )
-from database                   import (
+from database import (
     UsersTable, PointsTable, 
     GroupTable,
     User, Points
 )
-from .callbacks                 import (
+from .callbacks import (
     MenuCallback, MenuAction, 
     PointsCallback, PointsAction, 
     CourseCallback, CourseAction, 
     GroupSelectCallback, GroupMenuCallback, GroupMenuAction
 )
-from .states                    import PointsStates
+from .states import PointsStates
 
 dispatcher = Router()
+
 users_table = UsersTable()
 points_table = PointsTable()
 group_table = GroupTable()
@@ -104,6 +107,10 @@ async def handle_points_action(callback_query: types.CallbackQuery, action: Cour
     buttons.adjust(1)
     await callback_query.message.edit_text(text, reply_markup=buttons.as_markup())
 
+async def handle_course_action(callback_query: types.CallbackQuery, callback_data: CourseCallback, action: str, text: str, buttons: keyboard.InlineKeyboardBuilder):
+    decoded_course = decode_eng_to_rus(callback_data.course)
+    await callback_query.message.edit_text(text.format(decoded_course), reply_markup=buttons.as_markup())
+
 @dispatcher.message(CommandStart())
 async def start(message: types.Message):
     m = await message.answer("⏳ Загрузка...")
@@ -168,13 +175,12 @@ async def delete_points(callback_query: types.CallbackQuery):
 
 @dispatcher.callback_query(CourseCallback.filter(F.action == CourseAction.ADD_POINTS))
 async def add_points_course(callback_query: types.CallbackQuery, callback_data: CourseCallback):
-    decoded_course = decode_eng_to_rus(callback_data.course)
     buttons = keyboard.InlineKeyboardBuilder()
     for i in range(1, 11):
         buttons.button(text=str(i), callback_data=CourseCallback(action=CourseAction.INC, course=callback_data.course, count=i, user_id=callback_query.from_user.id))
     buttons.add(back_button(PointsCallback(action=PointsAction.ADD, user_id=callback_query.from_user.id).pack()))
     buttons.adjust(5)
-    await callback_query.message.edit_text(f"📊 Выберите количество баллов по предмету {decoded_course}:", reply_markup=buttons.as_markup())
+    await handle_course_action(callback_query, callback_data, CourseAction.ADD_POINTS, "📊 Выберите количество баллов по предмету {}:", buttons)
 
 @dispatcher.callback_query(CourseCallback.filter(F.action == CourseAction.DELETE))
 async def delete_points_course(callback_query: types.CallbackQuery, callback_data: CourseCallback):
@@ -190,7 +196,7 @@ async def delete_points_course(callback_query: types.CallbackQuery, callback_dat
         return
     buttons.add(back_button(PointsCallback(action=PointsAction.DELETE, user_id=callback_query.from_user.id).pack()))
     buttons.adjust(1)
-    await callback_query.message.edit_text("🗑️ Выберите балл для удаления:", reply_markup=buttons.as_markup())
+    await handle_course_action(callback_query, callback_data, CourseAction.DELETE, "🗑️ Выберите балл для удаления:", buttons)
 
 @dispatcher.callback_query(CourseCallback.filter(F.action == CourseAction.INC))
 async def add_points_count(callback_query: types.CallbackQuery, callback_data: CourseCallback):
@@ -370,6 +376,55 @@ async def group_menu(callback_query: types.CallbackQuery):
     buttons.add(back_button(MenuCallback(action=MenuAction.PROFILE, user_id=callback_query.from_user.id).pack()))
     buttons.adjust(1)
 
-    await callback_query.message.edit_text("👥 <b>Настройки группы:</b>", reply_markup=buttons.as_markup())
+    group_data = await group_table.get_group(callback_query.message.chat.id)
+    
+    faculty = group_data.faculty if group_data else "не указан"
+    group = group_data.group if group_data else "не указана"
 
-# @dispatcher.callback_query(GroupMenuCallback.filter(F.action == GroupMenuAction.CHANGE_GROUP))
+    await callback_query.message.edit_text(
+        f"👥 <b>Настройки группы:</b>\n\n"
+        f"👥 <b>Факультет:</b> {faculty}\n"
+        f"👥 <b>Группа:</b> {group}",
+        reply_markup=buttons.as_markup()
+    )
+
+@dispatcher.callback_query(GroupMenuCallback.filter(F.action == GroupMenuAction.CHANGE_GROUP))
+async def group_menu_change_group(callback_query: types.CallbackQuery, state: FSMContext):
+    async with AsyncClient() as client:
+        response = await client.get("https://timetable.tversu.ru/api/v1/selectors")
+        groups = response.json()["groups"]
+        faculty_list = list(set(group["facultyName"] for group in groups))
+    buttons = keyboard.InlineKeyboardBuilder()
+    for faculty in faculty_list:
+        buttons.button(text=faculty, callback_data=GroupSelectCallback(faculty=faculty_list.index(faculty), user_id=callback_query.from_user.id))
+    buttons.add(back_button(MenuCallback(action=MenuAction.GROUP_MENU, user_id=callback_query.from_user.id).pack()))
+    buttons.adjust(1)
+    await state.update_data(faculty_list=faculty_list)
+    await callback_query.message.edit_text("👥 Выберите факультет:", reply_markup=buttons.as_markup())
+
+@dispatcher.callback_query(GroupSelectCallback.filter(F.faculty != None))
+async def group_menu_select_group(callback_query: types.CallbackQuery, callback_data: GroupSelectCallback, state: FSMContext):
+    faculty_list = (await state.get_data())["faculty_list"]
+    await state.clear()
+
+    async with AsyncClient() as client:
+        response = await client.get("https://timetable.tversu.ru/api/v1/selectors")
+        groups = response.json()["groups"]
+        faculty_dict = {}
+        for group in groups:
+            faculty_dict.setdefault(group["facultyName"], []).append(group["groupName"])
+        sorted_groups = sorted(faculty_dict[faculty_list[callback_data.faculty]], key=sort_key)
+    buttons = keyboard.InlineKeyboardBuilder()
+    for group in sorted_groups:
+        buttons.button(text=group, callback_data=GroupSelectCallback(group=group, user_id=callback_query.from_user.id))
+    buttons.adjust(3)
+    buttons.add(back_button(GroupSelectCallback(faculty=callback_data.faculty, user_id=callback_query.from_user.id).pack()))
+    await state.update_data(faculty=faculty_list[callback_data.faculty])
+    await callback_query.message.edit_text("👥 Выберите группу:", reply_markup=buttons.as_markup())
+
+@dispatcher.callback_query(GroupSelectCallback.filter(F.group != None))
+async def group_menu_set_group(callback_query: types.CallbackQuery, callback_data: GroupSelectCallback, state: FSMContext):
+    faculty = (await state.get_data())["faculty"]
+    await state.clear()
+    await group_table.update_group(callback_query.message.chat.id, faculty, callback_data.group)
+    await callback_query.message.edit_text("👥 Группа успешно изменена!", reply_markup=back_button_markup(GroupMenuCallback(action=GroupMenuAction.CHANGE_GROUP, user_id=callback_query.from_user.id).pack()))
