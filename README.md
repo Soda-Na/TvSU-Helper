@@ -1,12 +1,12 @@
 # 🎓 Tver State University Helper Bot
 
-The **Tver State University Helper Bot** is designed to simplify student life by offering essential academic tools, including score recording, group and faculty selection, and up-to-date schedule parsing. Stay organized and on top of your academic progress with ease! 🧑‍🎓
+The **Tver State University Helper Bot** is designed to simplify student life by offering essential academic tools, including score recording, group and faculty selection, and up-to-date schedule parsing.
 
 ## ✨ Features
 
 - **📝 Record Scores**: Easily log your scores for different subjects and track your academic performance.
 - **🏛 Group & Faculty Selection**: Choose your group and faculty, dynamically parsed from the university's website.
-- **📅 Schedule Parsing**: Get the latest class schedule based on your selected group, so you never miss a lecture!
+- **📅 Schedule Parsing**: Get the latest class schedule based on your selected group.
 
 ## 🚀 Installation Guide
 
