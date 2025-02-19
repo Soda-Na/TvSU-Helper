@@ -60,3 +60,48 @@ def sort_key(s):
     if match:
         return match.group(1), int(match.group(2)), match.group(3)
     return s
+
+
+CLOCK_EMOJIS = {
+    ":clock1:"    : "🕐",
+    ":clock130:"  : "🕜",
+    ":clock2:"    : "🕑",
+    ":clock230:"  : "🕝",
+    ":clock3:"    : "🕒",
+    ":clock330:"  : "🕞",
+    ":clock4:"    : "🕓",
+    ":clock430:"  : "🕟",
+    ":clock5:"    : "🕔",
+    ":clock530:"  : "🕠",
+    ":clock6:"    : "🕕",
+    ":clock630:"  : "🕡",
+    ":clock7:"    : "🕖",
+    ":clock730:"  : "🕢",
+    ":clock8:"    : "🕗",
+    ":clock830:"  : "🕣",
+    ":clock9:"    : "🕘",
+    ":clock930:"  : "🕤",
+    ":clock10:"   : "🕙",
+    ":clock1030:" : "🕥",
+    ":clock11:"   : "🕚",
+    ":clock1130:" : "🕦",
+    ":clock12:"   : "🕛",
+    ":clock1230:" : "🕧",
+}
+
+
+def time_to_emoji(time_str):
+    hh, mm = map(int, time_str.split(':'))
+    h = hh % 12 or 12
+    if mm < 15:
+        m = 0
+    elif mm < 45:
+        m = 30
+    else:
+        h = (h % 12) + 1
+        m = 0
+    m_str = f"{m:02d}" if m else ""
+    return CLOCK_EMOJIS.get(f":clock{h}{m_str}:")
+
+if __name__ == "__main__":
+    print(time_to_emoji("5:40"))

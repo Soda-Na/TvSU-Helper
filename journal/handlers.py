@@ -1,18 +1,16 @@
 import datetime
 import pytz
 
-print("Importing from journal.handlers...")
-
 from httpx import AsyncClient
 from aiogram import types, F, Router
 from aiogram.filters.command import CommandStart
-from aiogram.utils import keyboard
+from aiogram.utils import keyboard, formatting
 from aiogram.fsm.context import FSMContext
 
 from utils import (
     back_button_markup, back_button, 
     encode_rus_to_eng, decode_eng_to_rus, 
-    sort_key
+    sort_key, time_to_emoji
 )
 from database import (
     UsersTable, PointsTable, 
@@ -45,43 +43,92 @@ async def profile_menu(message: types.Message, user_id: int = None):
     profile_text += await schedule(user.group) if user.group != "не указана" else "📅 <i>Расписание недоступно, укажите группу.</i>"
     await (message.edit_text if message.from_user.id == message.bot.id else message.answer)(profile_text, reply_markup=buttons.as_markup())
 
+def lessons_text_builder(lessons, timetable) -> str:
+    max_length = max([len(lesson['texts'][1].replace(" (Лекция)", "").replace(" (Практика)", "").replace(" (Лаб. работа)", "")) for lesson in lessons])
+    
+    lessons_text = ""
+    for lesson in lessons:
+        lesson_type = "Л" if "Лекция" in lesson['texts'][1] else "П" if "Практика" in lesson['texts'][1] else "ЛР"
+        lesson_time = timetable["lessonTimeData"][lesson["lessonNumber"]]
+        lesson['texts'][1] = lesson['texts'][1].replace(" (Лекция)", "").replace(" (Практика)", "").replace(" (Лаб. работа)", "")
+
+        emoji = time_to_emoji(lesson_time['start'])
+
+        lessons_text += f"{emoji} {lesson_time['start']}-{lesson_time['end']} {lesson['texts'][1]:<{max_length}} {lesson_type:<2} | {lesson['texts'][3].split()[-1]}\n"
+
+    return lessons_text 
+
+def get_lessons(day, week, timetable):
+    return sorted(
+        [lesson for lesson in timetable["lessonsContainers"] if lesson["weekDay"] == day and (lesson["weekMark"] == "every" or lesson["weekMark"] == week)],
+        key=lambda x: x["lessonNumber"]
+    )
+
+def choose_schedule_day(current_day, week_type, timetable, current_time, get_lessons):
+    today_lessons = get_lessons(current_day, week_type, timetable)
+    if today_lessons:
+        last_lesson = today_lessons[-1]
+        start_str = timetable["lessonTimeData"][last_lesson["lessonNumber"]]["start"]
+        if datetime.datetime.strptime(start_str, "%H:%M").time() > current_time:
+            return current_day, "на сегодня"
+    offset = 1
+    while True:
+        total_day = current_day + offset
+        weeks_passed = (total_day - 1) // 7
+        check_day = (total_day - 1) % 7 + 1
+        chk_week_type = week_type if weeks_passed % 2 == 0 else ("plus" if week_type == "minus" else "minus")
+        if get_lessons(check_day, chk_week_type, timetable):
+            label = "на завтра" if offset == 1 else "на " + "после" * (offset - 1) + "завтра"
+            return check_day, label
+        offset += 1
+
 async def schedule(group_name: str):
     async with AsyncClient() as client:
-        response = await client.get("https://timetable.tversu.ru/api/v1/selectors")
+        while True:
+            try:
+                response = await client.get("https://timetable.tversu.ru/api/v1/selectors", timeout=3)
+            except:
+                continue
+            break
         groups = response.json()["groups"]
         group_id = next((group["groupId"] for group in groups if group["groupName"] == group_name), None)
         if not group_id:
             return "Группа не найдена."
-        response = await client.get(f"https://timetable.tversu.ru/api/v1/group?group={group_id}&type=classes")
+        while True:
+            try:
+                response = await client.get(f"https://timetable.tversu.ru/api/v1/group?group={group_id}&type=classes", timeout=3)
+            except:
+                continue
+            break
         timetable = response.json()[0]
+    current_date = datetime.datetime.now(tz=pytz.timezone("Europe/Moscow"))
+    current_day = current_date.weekday() + 1 
 
     start_date = pytz.timezone("Europe/Moscow").localize(datetime.datetime.strptime(timetable["start"], "%d.%m.%Y"))
-    current_date = datetime.datetime.now(tz=pytz.timezone("Europe/Moscow"))
     week_number = (current_date - start_date).days // 7
     week_type = "plus" if week_number % 2 == 1 else "minus"
-    day_of_week = current_date.weekday() + 1
+    
+    chosen_day, schedule_label = choose_schedule_day(
+        current_day,
+        week_type,
+        timetable,
+        current_date.time(),
+        get_lessons
+    )
+    
+    lessons = get_lessons(chosen_day, week_type, timetable)
+    
+    lessons_text = lessons_text_builder(lessons, timetable)
+    lessons_text = formatting.Pre(lessons_text, language=f'📅 Расписание {schedule_label}:').as_html()
+    lessons_text += (
+        "\n"
+        f"<code>📓 Обозначения: </code>\n"
+        f"   <code>Л  - Лекция</code>\n"
+        f"   <code>П  - Практика</code>\n"
+        f"   <code>ЛР - Лабораторная работа</code>\n\n"
+    )
 
-    def get_lessons(day, week):
-        return sorted(
-            [lesson for lesson in timetable["lessonsContainers"] if lesson["weekDay"] == day and (lesson["weekMark"] == "every" or lesson["weekMark"] == week)],
-            key=lambda x: x["lessonNumber"]
-        )
-
-    lessons = get_lessons(day_of_week, week_type)
-    if lessons and timetable["lessonTimeData"][lessons[-1]["lessonNumber"]]["end"] < current_date.strftime("%H:%M") or day_of_week == 7:
-        day_of_week += 1
-        while not (lessons := get_lessons(day_of_week, week_type)):
-            if day_of_week == 8:
-                day_of_week, week_type = 1, "plus" if week_type == "minus" else "minus"
-        text = f"📅 <b>Расписание на {'после' * (day_of_week == 1)}завтра:</b>\n\n"
-    else:
-        text = "📅 <b>Расписание на сегодня:</b>\n\n"
-
-    for lesson in lessons:
-        lesson_time = timetable["lessonTimeData"][lesson["lessonNumber"]]
-        text += f"🕒<{'b' if lesson_time['start'] < current_date.strftime('%H:%M') < lesson_time['end'] else 'code'}>{lesson_time['start']}-{lesson_time['end']}</{'b' if lesson_time['start'] < current_date.strftime('%H:%M') < lesson_time['end'] else 'code'}> <i>{lesson['texts'][1]}</i> | <code>{lesson['texts'][3].split()[-1]}</code>\n"
-
-    return text
+    return lessons_text
 
 async def points_menu(message: types.Message, user_id: int):
     user = await users_table.get_user(user_id) or await users_table.add_user(User(id=user_id, group="не указана"))
